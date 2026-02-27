@@ -1,12 +1,22 @@
 import onnxruntime as ort
 import numpy as np
 import cv2
+import json
 import time
 
 MODEL_PATH = "/app/app/yolov8n.onnx"
 VIDEO_PATH = "/app/app/traffic.avi"
 INPUT_SIZE = 320
+CONF_THRESHOLD = 0.4
 
+# Clases COCO relevantes
+VEHICLE_CLASSES = {
+    1: "bicycle",
+    2: "car",
+    3: "motorcycle",
+    5: "bus",
+    7: "truck"
+}
 
 def create_session():
     so = ort.SessionOptions()
@@ -33,6 +43,43 @@ def preprocess(frame):
     return img
 
 
+def postprocess(output, frame_id):
+    predictions = output[0][0]  # YOLOv8 shape: (num_boxes, 85)
+
+    frame_result = {
+        "frame": frame_id,
+        "vehicles": []
+    }
+
+    counts = {
+        "car": 0,
+        "truck": 0,
+        "bus": 0,
+        "motorcycle": 0,
+        "bicycle": 0
+    }
+
+    for det in predictions:
+        conf = det[4]
+        if conf < CONF_THRESHOLD:
+            continue
+
+        class_id = np.argmax(det[5:])
+        score = det[5 + class_id]
+
+        if class_id in VEHICLE_CLASSES and score > CONF_THRESHOLD:
+            label = VEHICLE_CLASSES[class_id]
+            counts[label] += 1
+
+            frame_result["vehicles"].append({
+                "type": label,
+                "confidence": float(score)
+            })
+
+    frame_result["counts"] = counts
+    return frame_result
+
+
 def run_video(session):
     cap = cv2.VideoCapture(VIDEO_PATH)
 
@@ -41,8 +88,9 @@ def run_video(session):
         return
 
     input_name = session.get_inputs()[0].name
+    frame_id = 0
+    results = []
 
-    total_frames = 0
     start_time = time.time()
 
     while True:
@@ -53,17 +101,26 @@ def run_video(session):
         input_tensor = preprocess(frame)
         outputs = session.run(None, {input_name: input_tensor})
 
-        total_frames += 1
+        frame_result = postprocess(outputs, frame_id)
+        results.append(frame_result)
+
+        print(json.dumps(frame_result))
+
+        frame_id += 1
 
     end_time = time.time()
     cap.release()
 
     total_time = end_time - start_time
-    fps = total_frames / total_time
+    fps = frame_id / total_time
 
-    print("Total frames:", total_frames)
+    print("\n===== SUMMARY =====")
+    print("Total frames:", frame_id)
     print("Total time (s):", round(total_time, 2))
     print("Average FPS:", round(fps, 2))
+
+    with open("results.json", "w") as f:
+        json.dump(results, f, indent=2)
 
 
 if __name__ == "__main__":
