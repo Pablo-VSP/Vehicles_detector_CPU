@@ -1,0 +1,32 @@
+# Entorno virtual
+venv/
+env/
+.venv/
+
+# Archivos compilados
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de logs
+*.log
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Archivos de entorno
+.env
+results.json
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Builds
+dist/
+build/
+*.egg-info/

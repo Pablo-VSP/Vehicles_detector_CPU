@@ -42,9 +42,46 @@ def preprocess(frame):
     img = np.expand_dims(img, axis=0)
     return img
 
+def postprocess(output, frame_id, original_shape):
+    preds = output[0]          # (1, 84, 2100)
+    preds = np.squeeze(preds)  # (84, 2100)
+    preds = preds.T            # (2100, 84)
 
-def postprocess(output, frame_id):
-    predictions = output[0][0]  # YOLOv8 shape: (num_boxes, 85)
+    boxes = []
+    scores = []
+    class_ids = []
+
+    img_h, img_w = original_shape
+
+    for det in preds:
+        x, y, w, h = det[0:4]
+        class_scores = det[4:]
+
+        class_id = np.argmax(class_scores)
+        confidence = class_scores[class_id]
+
+        if confidence < CONF_THRESHOLD:
+            continue
+
+        if class_id not in VEHICLE_CLASSES:
+            continue
+
+        # Convert YOLO center format → x1,y1,x2,y2
+        x1 = (x - w / 2) * img_w / INPUT_SIZE
+        y1 = (y - h / 2) * img_h / INPUT_SIZE
+        x2 = (x + w / 2) * img_w / INPUT_SIZE
+        y2 = (y + h / 2) * img_h / INPUT_SIZE
+
+        boxes.append([int(x1), int(y1), int(x2 - x1), int(y2 - y1)])
+        scores.append(float(confidence))
+        class_ids.append(class_id)
+
+    indices = cv2.dnn.NMSBoxes(
+        boxes,
+        scores,
+        score_threshold=CONF_THRESHOLD,
+        nms_threshold=0.45
+    )
 
     frame_result = {
         "frame": frame_id,
@@ -59,21 +96,14 @@ def postprocess(output, frame_id):
         "bicycle": 0
     }
 
-    for det in predictions:
-        conf = det[4]
-        if conf < CONF_THRESHOLD:
-            continue
-
-        class_id = np.argmax(det[5:])
-        score = det[5 + class_id]
-
-        if class_id in VEHICLE_CLASSES and score > CONF_THRESHOLD:
-            label = VEHICLE_CLASSES[class_id]
+    if len(indices) > 0:
+        for i in indices.flatten():
+            label = VEHICLE_CLASSES[class_ids[i]]
             counts[label] += 1
 
             frame_result["vehicles"].append({
                 "type": label,
-                "confidence": float(score)
+                "confidence": scores[i]
             })
 
     frame_result["counts"] = counts
@@ -101,7 +131,7 @@ def run_video(session):
         input_tensor = preprocess(frame)
         outputs = session.run(None, {input_name: input_tensor})
 
-        frame_result = postprocess(outputs, frame_id)
+        frame_result = postprocess(outputs, frame_id, frame.shape[:2])
         results.append(frame_result)
 
         print(json.dumps(frame_result))
