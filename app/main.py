@@ -4,8 +4,8 @@ import cv2
 import json
 import time
 
-MODEL_PATH = "/app/app/yolov8n.onnx"
-VIDEO_PATH = "/app/app/traffic.avi"
+MODEL_PATH = "model.onnx"
+VIDEO_PATH = "input_320_mjpeg.avi"
 INPUT_SIZE = 320
 CONF_THRESHOLD = 0.4
 
